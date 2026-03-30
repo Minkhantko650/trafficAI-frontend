@@ -203,8 +203,69 @@ export interface QueryResult {
   suggested_roads?: string[];
 }
 
-export async function sendQuery(question: string, language: string): Promise<QueryResult> {
-  const res = await fetch(`${API_BASE}/query/`, {
+export async function getRoute(
+  fromLat: number, fromLng: number,
+  toLat: number, toLng: number,
+  destName = ''
+): Promise<{ route_points: [number, number][]; summary: { travel_time_mins: number; length_km: number; traffic_delay_mins: number } } | null> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/route/?from_lat=${fromLat}&from_lon=${fromLng}&to_lat=${toLat}&to_lon=${toLng}&dest_name=${encodeURIComponent(destName)}`
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.points || data.points.length === 0) return null;
+    return { route_points: data.points, summary: data.summary };
+  } catch {
+    return null;
+  }
+}
+
+const TOMTOM_KEY = import.meta.env.VITE_TOMTOM_API_KEY;
+
+export async function geocodePlace(name: string): Promise<{ lat: number; lng: number } | null> {
+  const queries = [`${name} Bangkok`, `${name} Bangkok Thailand`, name];
+  for (const q of queries) {
+    try {
+      // Fuzzy search
+      const r = await fetch(
+        `https://api.tomtom.com/search/2/search/${encodeURIComponent(q)}.json?key=${TOMTOM_KEY}&limit=1&countrySet=TH&lat=13.7563&lon=100.5018&radius=50000`
+      );
+      if (r.ok) {
+        const results = (await r.json()).results ?? [];
+        if (results.length > 0) {
+          const pos = results[0].position;
+          return { lat: pos.lat, lng: pos.lon };
+        }
+      }
+    } catch { /* continue */ }
+  }
+  // POI search fallback
+  try {
+    const r = await fetch(
+      `https://api.tomtom.com/search/2/poiSearch/${encodeURIComponent(name)}.json?key=${TOMTOM_KEY}&limit=1&countrySet=TH&lat=13.7563&lon=100.5018&radius=50000`
+    );
+    if (r.ok) {
+      const results = (await r.json()).results ?? [];
+      if (results.length > 0) {
+        const pos = results[0].position;
+        return { lat: pos.lat, lng: pos.lon };
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+export async function sendQuery(
+  question: string,
+  language: string,
+  userCoords?: { lat: number; lng: number }
+): Promise<QueryResult> {
+  let url = `${API_BASE}/query/`;
+  if (userCoords) {
+    url += `?lat=${userCoords.lat}&lon=${userCoords.lng}`;
+  }
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ question, language }),

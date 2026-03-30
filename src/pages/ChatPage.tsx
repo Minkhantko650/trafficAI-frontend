@@ -7,6 +7,19 @@ import { mockChatHistory, ChatMessage } from '../data/mockData';
 import { sendQuery } from '../utils/api';
 
 const CHAT_STORAGE_KEY = 'traffic-chat-history';
+const LOCATION_STORAGE_KEY = 'user-location';
+
+const loadUserCoords = (): { lat: number; lng: number } | undefined => {
+  try {
+    const raw = localStorage.getItem(LOCATION_STORAGE_KEY);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length === 2) {
+      return { lat: parsed[1], lng: parsed[0] }; // stored as [lng, lat]
+    }
+  } catch { /* ignore */ }
+  return undefined;
+};
 
 const loadStoredMessages = (): ChatMessage[] => {
   try {
@@ -73,7 +86,7 @@ export function ChatPage() {
     setIsLoading(true);
 
     try {
-      const result = await sendQuery(text, language);
+      const result = await sendQuery(text, language, loadUserCoords());
       const newAiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         sender: 'ai',
@@ -207,6 +220,7 @@ export function ChatPage() {
                               route_points: msg.route_points,
                               focus_lat: msg.focus_lat,
                               focus_lng: msg.focus_lng,
+                              route_summary: msg.route_summary,
                             }
                           })}
                           className="flex items-center gap-1 text-[11px] font-medium text-violet-700 bg-violet-50 px-2 py-0.5 rounded-md border border-violet-200 hover:bg-violet-100 transition-colors"

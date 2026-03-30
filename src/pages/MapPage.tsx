@@ -15,6 +15,8 @@ import {
   LocateFixed,
   MessageSquare,
   Navigation,
+  Search,
+  Loader2,
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import {
@@ -23,7 +25,7 @@ import {
   Severity,
   IncidentType,
 } from '../data/mockData';
-import { fetchIncidents } from '../utils/api';
+import { fetchIncidents, geocodePlace, getRoute } from '../utils/api';
 
 const BKK_CENTER: [number, number] = [100.5018, 13.7563];
 const LOCATION_STORAGE_KEY = 'user-location';
@@ -77,6 +79,8 @@ export function MapPage() {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const incidentMarkersRef = useRef<tt.Marker[]>([]);
   const userMarkerRef = useRef<tt.Marker | null>(null);
+  const routeMarkersRef = useRef<tt.Marker[]>([]);
+  const mapLoadedRef = useRef(false);
 
   const [incidents, setIncidents] = useState<Incident[]>(mockIncidents);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
@@ -86,6 +90,9 @@ export function MapPage() {
   );
   const [isLocating, setIsLocating] = useState(false);
   const [hasRoute, setHasRoute] = useState(false);
+  const [destination, setDestination] = useState('');
+  const [isRouting, setIsRouting] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchIncidents()
@@ -255,7 +262,30 @@ export function MapPage() {
     mapRef.current.flyTo({ center: coords, zoom, speed: 0.9 });
   };
 
-  const drawRoute = (routePoints: [number, number][]) => {
+  const createRoutePin = (label: string, color: string) => {
+    const el = document.createElement('div');
+    el.innerHTML = `
+      <div style="
+        display: flex; flex-direction: column; align-items: center; gap: 0;
+      ">
+        <div style="
+          width: 32px; height: 32px; border-radius: 50% 50% 50% 0;
+          transform: rotate(-45deg);
+          background: ${color}; border: 3px solid white;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+          display: flex; align-items: center; justify-content: center;
+        ">
+          <span style="
+            transform: rotate(45deg);
+            color: white; font-size: 12px; font-weight: 800; line-height: 1;
+          ">${label}</span>
+        </div>
+      </div>
+    `;
+    return el;
+  };
+
+  const drawRoute = (routePoints: [number, number][], summary?: { travel_time_mins: number; length_km: number; traffic_delay_mins: number }) => {
     const map = mapRef.current;
     if (!map || routePoints.length === 0) return;
     // GeoJSON uses [lng, lat]
@@ -281,16 +311,45 @@ export function MapPage() {
           type: 'line',
           source: 'bkk-route',
           layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: { 'line-color': '#0891b2', 'line-width': 5, 'line-opacity': 0.9 },
+          paint: { 'line-color': '#1d4ed8', 'line-width': 5, 'line-opacity': 0.95 },
         });
       }
+
+      // Remove old A/B markers
+      routeMarkersRef.current.forEach((m) => m.remove());
+      routeMarkersRef.current = [];
+
+      const start = coords[0] as [number, number];
+      const end = coords[coords.length - 1] as [number, number];
+
+      const startMarker = new tt.Marker({ element: createRoutePin('A', '#16a34a'), anchor: 'bottom' })
+        .setLngLat(start)
+        .addTo(map);
+      const endMarker = new tt.Marker({ element: createRoutePin('B', '#dc2626'), anchor: 'bottom' })
+        .setLngLat(end)
+        .addTo(map);
+
+      // Midpoint popup with travel time
+      const midCoord = coords[Math.floor(coords.length / 2)] as [number, number];
+      const popupHtml = summary
+        ? `<div style="font-size:13px; font-weight:700; color:#1d4ed8; white-space:nowrap;">
+            🕐 ${summary.travel_time_mins} min &nbsp;·&nbsp; ${summary.length_km} km
+            ${summary.traffic_delay_mins > 0 ? `<br/><span style="color:#f97316; font-size:11px;">+${summary.traffic_delay_mins} min delay</span>` : ''}
+           </div>`
+        : '';
+      const midPopup = new tt.Popup({ closeButton: false, closeOnClick: false, offset: 10 })
+        .setLngLat(midCoord)
+        .setHTML(popupHtml)
+        .addTo(map);
+      routeMarkersRef.current = [startMarker, endMarker, midPopup as any];
+
       // Fit map bounds to the full route
       const lnglats = coords as [number, number][];
       const bounds = lnglats.reduce(
         (b, c) => { b.extend(c); return b; },
         new tt.LngLatBounds(lnglats[0], lnglats[0])
       );
-      map.fitBounds(bounds, { padding: 60, maxZoom: 14, speed: 0.9 });
+      map.fitBounds(bounds, { padding: 80, maxZoom: 14, speed: 0.9 });
       setHasRoute(true);
     } catch (e) {
       console.warn('[map] Could not draw route:', e);
@@ -305,6 +364,8 @@ export function MapPage() {
       if ((map as any).getLayer('bkk-route-outline')) (map as any).removeLayer('bkk-route-outline');
       if ((map as any).getSource('bkk-route'))        (map as any).removeSource('bkk-route');
     } catch (e) { /* ignore */ }
+    routeMarkersRef.current.forEach((m) => m.remove());
+    routeMarkersRef.current = [];
     setHasRoute(false);
   };
 
@@ -331,6 +392,40 @@ export function MapPage() {
     if (userMarkerRef.current) {
       userMarkerRef.current.remove();
       userMarkerRef.current = null;
+    }
+  };
+
+  const handleRouteTo = async () => {
+    if (!destination.trim()) return;
+    if (!userLocation) {
+      setRouteError(language === 'th' ? 'กรุณาเปิดตำแหน่งของคุณก่อน' : 'Enable your location first');
+      return;
+    }
+    setIsRouting(true);
+    setRouteError(null);
+    try {
+      const dest = await geocodePlace(destination.trim());
+      if (!dest) {
+        setRouteError(language === 'th' ? 'ไม่พบสถานที่นี้' : `Could not find "${destination}"`);
+        return;
+      }
+      // userLocation is [lng, lat] (TomTom format)
+      const result = await getRoute(userLocation[1], userLocation[0], dest.lat, dest.lng, destination.trim());
+      if (result && result.route_points.length > 0) {
+        const tryDraw = () => {
+          const map = mapRef.current;
+          if (!map || !map.isStyleLoaded()) { setTimeout(tryDraw, 200); return; }
+          drawRoute(result.route_points, result.summary);
+        };
+        tryDraw();
+        setDestination('');
+      } else {
+        setRouteError(language === 'th' ? 'ไม่สามารถคำนวณเส้นทางได้' : 'Could not calculate route. Try again.');
+      }
+    } catch {
+      setRouteError(language === 'th' ? 'เกิดข้อผิดพลาด กรุณาลองใหม่' : 'Error calculating route. Try again.');
+    } finally {
+      setIsRouting(false);
     }
   };
 
@@ -400,6 +495,7 @@ export function MapPage() {
     map.addControl(new tt.NavigationControl(), 'top-right');
 
     map.on('load', () => {
+      mapLoadedRef.current = true;
       incidents.forEach((incident) => {
         const markerElement = createIncidentMarkerElement(incident.severity);
         const popup = new tt.Popup({ offset: 24 }).setHTML(createPopupHTML(incident));
@@ -443,15 +539,25 @@ export function MapPage() {
       focus_lat?: number;
       focus_lng?: number;
       route_points?: [number, number][];
+      route_summary?: { travel_time_mins: number; length_km: number; traffic_delay_mins: number };
     } | null;
     if (!state) return;
 
-    const tryApply = () => {
-      if (!mapRef.current) { setTimeout(tryApply, 200); return; }
+    const applyState = () => {
+      console.log('[map] applyState called, route_points:', state.route_points?.length);
       if (state.route_points && state.route_points.length > 0) {
-        drawRoute(state.route_points);
+        drawRoute(state.route_points, state.route_summary);
       } else if (state.focus_lat && state.focus_lng) {
         flyToCoordinates([state.focus_lng!, state.focus_lat!], 15);
+      }
+    };
+    const tryApply = () => {
+      console.log('[map] tryApply: map=', !!mapRef.current, 'loaded=', mapLoadedRef.current);
+      if (!mapRef.current) { setTimeout(tryApply, 200); return; }
+      if (mapLoadedRef.current) {
+        applyState();
+      } else {
+        setTimeout(tryApply, 200);
       }
     };
     tryApply();
@@ -567,7 +673,46 @@ export function MapPage() {
 
   return (
     <div className="flex flex-col h-[100dvh] pt-16 relative overflow-hidden bg-slate-100">
-      <div className="hidden md:flex absolute top-20 left-4 z-[400] w-80 bg-white rounded-2xl shadow-xl border border-slate-200 flex-col max-h-[calc(100vh-6rem)]">
+
+      {/* Destination search bar */}
+      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[400] w-full max-w-sm px-4">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-2 flex gap-2 items-center">
+          <div className="flex-1 flex items-center gap-2 bg-slate-50 rounded-xl px-3 py-2">
+            <Search size={16} className="text-slate-400 flex-shrink-0" />
+            <input
+              type="text"
+              value={destination}
+              onChange={(e) => { setDestination(e.target.value); setRouteError(null); }}
+              onKeyDown={(e) => e.key === 'Enter' && handleRouteTo()}
+              placeholder={language === 'th' ? 'ไปที่ไหน?' : 'Where to?'}
+              className="bg-transparent text-sm text-slate-800 placeholder:text-slate-400 outline-none w-full"
+            />
+            {destination && (
+              <button onClick={() => { setDestination(''); setRouteError(null); }} className="text-slate-400 hover:text-slate-600">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={handleRouteTo}
+            disabled={isRouting || !destination.trim()}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl px-3 py-2 flex items-center gap-1.5 text-sm font-semibold transition-colors flex-shrink-0"
+          >
+            {isRouting ? <Loader2 size={15} className="animate-spin" /> : <Navigation size={15} />}
+            {language === 'th' ? 'นำทาง' : 'Go'}
+          </button>
+        </div>
+        {routeError && (
+          <p className="text-xs text-red-500 mt-1.5 text-center font-medium">{routeError}</p>
+        )}
+        {!userLocation && (
+          <p className="text-xs text-amber-600 mt-1.5 text-center font-medium">
+            {language === 'th' ? '⚠ เปิดตำแหน่งของคุณเพื่อใช้การนำทาง' : '⚠ Enable your location to use navigation'}
+          </p>
+        )}
+      </div>
+
+      <div className="hidden md:flex absolute top-36 left-4 z-[400] w-80 bg-white rounded-2xl shadow-xl border border-slate-200 flex-col max-h-[calc(100vh-9rem)]">
         <div className="p-4 border-b border-slate-100 bg-slate-50 rounded-t-2xl">
           <h2 className="font-bold text-lg text-slate-900 flex items-center gap-2">
             <MapPin size={20} className="text-cyan-600" />
