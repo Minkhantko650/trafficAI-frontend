@@ -172,9 +172,11 @@ export function MapPage() {
   const createPopupHTML = (incident: Incident) => {
     return `
       <div style="
-        width: 260px;
+        width: 300px;
+        padding: 14px 16px;
         font-family: system-ui, -apple-system, sans-serif;
         color: #0f172a;
+        box-sizing: border-box;
       ">
 
         <div style="
