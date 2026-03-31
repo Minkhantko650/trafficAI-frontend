@@ -171,16 +171,26 @@ export function MapPage() {
 
   const createPopupHTML = (incident: Incident) => {
     return `
-      <div style="width: 240px; padding: 4px;">
-        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+      <div style="
+        width: 260px;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #0f172a;
+      ">
+
+        <div style="
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 12px;
+        ">
           <div style="
-            width: 36px;
-            height: 36px;
-            border-radius: 12px;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            background:${
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: ${
               incident.severity === 'critical'
                 ? '#fee2e2'
                 : incident.severity === 'major'
@@ -189,7 +199,7 @@ export function MapPage() {
                 ? '#fef9c3'
                 : '#dcfce7'
             };
-            color:${
+            color: ${
               incident.severity === 'critical'
                 ? '#dc2626'
                 : incident.severity === 'major'
@@ -198,57 +208,68 @@ export function MapPage() {
                 ? '#ca8a04'
                 : '#16a34a'
             };
-            font-weight:700;
-          ">
-            !
-          </div>
+            font-weight: 700;
+            font-size: 16px;
+          ">!</div>
+
           <div>
-            <div style="font-weight:700; color:#0f172a;">
+            <div style="font-weight: 700; font-size: 15px;">
               ${t(`type.${incident.type}`)}
             </div>
-            <div style="font-size:12px; color:#64748b; font-weight:500;">
+            <div style="font-size: 12px; color: #64748b;">
               ${t(`severity.${incident.severity}`)}
             </div>
           </div>
         </div>
 
-        <div style="font-weight:600; color:#1e293b; margin-bottom:4px;">
+        <div style="
+          font-weight: 600;
+          font-size: 14px;
+          margin-bottom: 8px;
+        ">
           ${incident.location[language]}
         </div>
 
-        <div style="font-size:14px; color:#475569; margin-bottom:12px; line-height:1.5;">
+        <div style="
+          font-size: 13px;
+          color: #475569;
+          line-height: 1.5;
+          margin-bottom: 12px;
+        ">
           ${incident.description[language]}
         </div>
 
         <div style="
-          font-size:12px;
-          color:#64748b;
-          background:#f8fafc;
-          padding:8px;
-          border-radius:12px;
-          border:1px solid #f1f5f9;
-          margin-bottom:10px;
+          height: 1px;
+          background: #e2e8f0;
+          margin: 10px 0;
+        "></div>
+
+        <div style="
+          font-size: 12px;
+          color: #64748b;
+          margin-bottom: 12px;
         ">
-          <span style="font-weight:600;">${t('alerts.clearance')}</span>
-          ${incident.clearanceTime}
+          <span style="font-weight: 600;">
+            ${t('alerts.clearance')}
+          </span>
+          <span style="color: #0f172a; font-weight: 500;">
+            ${incident.clearanceTime}
+          </span>
         </div>
 
         <button
           onclick="if(window.__bkkNavigateToChat)window.__bkkNavigateToChat('${incident.location.en.replace(/'/g, "\\'")}')"
           style="
-            width:100%;
-            padding:8px 12px;
-            background:#0891b2;
-            color:white;
-            border:none;
-            border-radius:10px;
-            font-size:13px;
-            font-weight:600;
-            cursor:pointer;
-            display:flex;
-            align-items:center;
-            justify-content:center;
-            gap:6px;
+            width: 100%;
+            padding: 10px;
+            background: #0891b2;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
           "
         >
           💬 ${language === 'th' ? 'ถามในแชท' : 'Ask in Chat'}

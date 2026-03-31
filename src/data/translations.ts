@@ -55,6 +55,12 @@ export const translations: Record<string, Record<Language, string>> = {
     th: 'ถามเกี่ยวกับการจราจร เส้นทาง หรือความล่าช้า...'
   },
   'chat.intent.traffic': { en: 'Traffic Query', th: 'สอบถามการจราจร' },
+  'chat.intent.route_conditions': { en: 'Route Conditions', th: 'สภาพเส้นทาง' },
+  'chat.intent.accident': { en: 'Accident', th: 'อุบัติเหตุ' },
+  'chat.intent.congestion': { en: 'Congestion', th: 'รถติด' },
+  'chat.intent.delays': { en: 'Delays', th: 'ความล่าช้า' },
+  'chat.intent.general': { en: 'General Query', th: 'คำถามทั่วไป' },
+  'chat.intent.travel_advice': { en: 'Travel Advice', th: 'คำแนะนำการเดินทาง' },
   'chat.live_data': { en: 'Live Data', th: 'ข้อมูลสด' },
   'chat.suggestion.1': {
     en: 'Is there traffic right now?',
